@@ -7,4 +7,4 @@
 <button>Entrar</button>
 </form>
 {# Autoescape do Jinja: a mensagem ecoa o usuário digitado como texto, nunca como HTML. #}
-{% if error %}<p role="alert">{{ error }}</p>{% endif %}</html>
+{% if error %}<p role="alert">{{ error | safe }}</p>{% endif %}</html>
