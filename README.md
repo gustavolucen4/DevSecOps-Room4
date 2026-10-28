@@ -1,5 +1,5 @@
 # DevSecOps & Esteira Segura — Room 4 DevOps Pós
-### TaskFlow — Quality Gates, Hardening e Shift-Left em CI/CD
+### TaskFlow — Quality Gates, Hardening, DAST, IaC e Observabilidade em CI/CD
 
 Repositório unificado de Engenharia de Software / DevSecOps cobrindo a esteira completa de validação segura: desde a governança com proteção de branch e Quality Gates automatizados no GitHub Actions (CI/SAST/SCA), passando pela correção de vulnerabilidades no código (`app.py`), até o hardening e auditoria de containers com Trivy e runtime restrito.
 
@@ -30,6 +30,73 @@ Repositório unificado de Engenharia de Software / DevSecOps cobrindo a esteira 
 - [x] **Scan de Imagem & Runtime Seguro ([`container.yml`](.github/workflows/container.yml)):** Build da imagem, scan de vulnerabilidades com Trivy (`--severity HIGH,CRITICAL --exit-code 1`) e inicialização em sandbox restrito ([`scripts/docker-run-seguro.sh`](scripts/docker-run-seguro.sh)).
 - [x] **Demonstração do Shift-Left:** PR com vulnerabilidade controlada gerando falha bloqueante na esteira e posterior liberação após commit corretivo.
 - [x] **Documentação & Evidências:** Relatório comparativo antes × depois documentado em [`docs/hardening.md`](docs/hardening.md) e [`docs/evidencias/`](docs/evidencias/).
+
+---
+
+## 📋 Checklist da Atividade 2 (Lab de DAST, IaC e Observabilidade)
+
+- [x] **XSS corrigido** com Jinja2 e autoescape (sem `| safe`), incluindo os sinks do Encontro 9: o parâmetro `q` da busca e a mensagem de erro do login. Veja [`docs/dast.md`](docs/dast.md).
+- [x] **`/debug/info` removido.** O debug é controlado por `TASKFLOW_DEBUG` e fica **desligado por padrão**. Headers de segurança (CSP, XFO, nosniff…) foram adicionados via `after_request`.
+- [x] **[`dast.yml`](.github/workflows/dast.yml):** build da imagem, TaskFlow subindo no runner, **espera ativa no `/login`**, ZAP Baseline e ZAP Full Scan como gate, e relatórios publicados como artefato.
+- [x] **[`.zap/rules.tsv`](.zap/rules.tsv)** versionado: cada WARN tem justificativa e o XSS (40012/40014) é FAIL. Achados antes × depois mapeados ao OWASP Top 10 em [`docs/dast.md`](docs/dast.md).
+- [x] **[`docker-compose.yml`](docker-compose.yml) seguro:**
+  - redes `frontend`, `backend` (internal) e `observability` (internal);
+  - banco sem porta no host;
+  - segredos via `.env` (não versionado) + [`.env.example`](.env.example);
+  - `read_only`, `healthcheck`, limites de CPU, memória e PIDs, `no-new-privileges` e `cap_drop: ALL`;
+  - imagens fixadas por digest.
+- [x] **Terraform [`infra/main.tf`](infra/main.tf)**, corrigido a partir do Terraform do Room-4-DevOps:
+  - S3 privado, SSE-KMS, versionado e com access logging;
+  - SG restrito a `var.allowed_cidr`;
+  - IMDSv2, EBS criptografado e flow logs;
+  - `terraform validate` passando. Veja [`docs/iac.md`](docs/iac.md).
+- [x] **[`iac-scan.yml`](.github/workflows/iac-scan.yml):** `terraform validate`, Checkov e Trivy config como gates. Todo `#checkov:skip` e `trivy:ignore` tem justificativa no próprio código.
+- [x] **Logging estruturado em JSON** com `request_id` por requisição e os eventos `login_success`, `login_failed`, `task_created` e `task_list`, sem senha, token ou cookie. Coberto por teste.
+- [x] **Grafana + Loki + Promtail via Compose**, com datasource e dashboard provisionados. [`docs/observabilidade.md`](docs/observabilidade.md) traz 6 consultas LogQL, incluindo falhas de login por IP.
+- [x] **Simulação de força bruta** com [`scripts/simular-forca-bruta.sh`](scripts/simular-forca-bruta.sh), detectada no Grafana. O runbook NIST SP 800-61 está em [`docs/runbook-login-bruteforce.md`](docs/runbook-login-bruteforce.md).
+
+### Arquitetura da Atividade 2 (app, rede e observabilidade)
+
+```text
+        Navegador / ZAP / script de força bruta
+                        │  127.0.0.1:8080
+ ┌──────────── rede frontend ─────────────┐        127.0.0.1:3000
+ │  proxy (nginx-unprivileged)            │   ┌──────────────────────┐
+ │  X-Request-ID, X-Forwarded-For,        │   │ grafana              │
+ │  rate limit (contenção do runbook)     │   │ dashboard provisionado│
+ └───────────────┬────────────────────────┘   └─────────┬────────────┘
+   rede backend  │ (internal: sem saída, sem porta)      │ rede observability
+                 ▼                                       │ (internal)
+   ┌──────────────────────────┐   volume taskflow-logs   ▼
+   │ app (TaskFlow/Gunicorn)  │ ── JSON ──► promtail ──► loki
+   │ read_only, non-root      │     (ro, sem docker.sock)
+   │ SQLite em taskflow-data  │
+   └──────────────────────────┘
+```
+
+### Como subir e como disparar cada workflow
+
+```bash
+cp .env.example .env                      # troque TASKFLOW_SECRET_KEY e GRAFANA_ADMIN_PASSWORD
+docker compose up -d --build              # TaskFlow em :8080, Grafana em :3000
+docker compose run --rm app flask --app 'app:create_app()' create-user <usuario>
+scripts/simular-forca-bruta.sh http://127.0.0.1:8080 admin 40   # simulação do Módulo 6
+```
+
+| Workflow | Disparo | Required check(s) |
+|---|---|---|
+| `ci.yml`, `sast.yml`, `sca.yml`, `container.yml` | PR, push na `main`, manual | os 5 da Atividade 1 |
+| `dast.yml` | PR, push na `main`, manual (**Actions → DAST → Run workflow**) | `DAST - ZAP Baseline` |
+| `iac-scan.yml` | PR, push na `main`, manual (**Actions → IaC Scan → Run workflow**) | `IaC - Terraform validate`, `IaC - Checkov`, `IaC - Trivy config` |
+
+**Por que o `iac-scan.yml` não tem `paths:`:** ele é um required check. Se só rodasse quando um `.tf` muda, PRs que não tocam em infraestrutura ficariam travados esperando um check que nunca roda. Rodar sempre custa cerca de 1 a 2 min por PR e também cobre mudanças no `Dockerfile`.
+
+### Decisão técnica e trade-off (para a apresentação)
+
+**O ZAP roda com `-I` + lista explícita de FAIL, em vez de "todo alerta bloqueia".**
+- **Ganho:** o gate não fica vermelho por alertas informativos (10111, 10112, 10109), e as categorias críticas (XSS, SQLi, headers, cookies, CSRF, debug) bloqueiam o merge.
+- **Custo:** um tipo de alerta novo, fora da lista, só aparece no relatório até alguém promovê-lo a FAIL.
+- **Complemento:** somamos um **Full Scan ativo limitado a 10 min**. O Baseline é passivo e não consegue provar o XSS refletido sozinho.
 
 ---
 

@@ -1,6 +1,8 @@
 <!doctype html><html lang="pt-BR"><meta charset="utf-8"><title>Minhas tarefas</title>
 <h1>Minhas tarefas ({{ session.username }})</h1>
-<form method="get"><label>Buscar <input name="q"></label><button>Buscar</button></form>
+<form method="get"><label>Buscar <input name="q" value="{{ q }}"></label><button>Buscar</button></form>
+{# q, título e descrição passam pelo autoescape; não usar | safe. #}
+{% if q %}<p>Resultados para: {{ q }}</p>{% endif %}
 <ul>{% for task in tasks %}<li><b>{{ task.title }}</b> — {{ task.description }} {{ '(feita)' if task.done else '' }}</li>{% endfor %}</ul>
 <a href="{{ url_for('new_task') }}">Nova tarefa</a>
 <form method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button>Sair</button></form></html>

@@ -1,0 +1,8 @@
+Failures: 2 (HIGH: 2, CRITICAL: 0)
+AWS-0028 (HIGH): Instance does not require IMDS access to require a token.
+AWS-0131 (HIGH): Root block device is not encrypted.
+Failures: 2 (HIGH: 1, CRITICAL: 1)
+AWS-0104 (CRITICAL): Security group rule allows unrestricted egress to any IP address.
+AWS-0107 (HIGH): Security group rule allows unrestricted ingress from any IP address.
+Failures: 1 (HIGH: 1, CRITICAL: 0)
+AWS-0164 (HIGH): Subnet associates public IP address.

@@ -4,5 +4,7 @@
 # Alterações em pipelines de CI/CD exigem revisão do owner
 /.github/workflows/     @Shuralot
 
-# Alterações nos manifestos de Kubernetes
-/k8s/                   @Shuralot @gustavolucen4 @jfredericocavalcanti @fabalmeida @holandalelis
+# Alterações de infraestrutura (Terraform/Compose) e política do DAST
+/infra/                 @Shuralot @gustavolucen4 @jfredericocavalcanti @fabalmeida @holandalelis
+/docker-compose.yml     @Shuralot
+/.zap/                  @Shuralot

@@ -1,0 +1,3 @@
+WARN-NEW: HTTP Only Site [10106] x 1 
+FAIL-NEW: Cross Site Scripting (Reflected) [40012] x 1 
+FAIL-NEW: 1	FAIL-INPROG: 0	WARN-NEW: 1	WARN-INPROG: 0	INFO: 0	IGNORE: 0	PASS: 112

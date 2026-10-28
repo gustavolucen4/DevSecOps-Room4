@@ -1,0 +1,149 @@
+# TaskFlow + stack de observabilidade (Grafana, Loki, Promtail).
+# Uso: cp .env.example .env && editar .env && docker compose up -d --build
+#
+# Redes:
+#   frontend      -> única com porta publicada (proxy :8080 e Grafana :3000, só em 127.0.0.1)
+#   backend       -> internal: proxy <-> app. A app e o banco (SQLite em volume) não têm porta no host
+#   observability -> internal: Promtail -> Loki <- Grafana
+name: taskflow
+
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  restart: unless-stopped
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,size=64m
+
+services:
+  proxy:
+    <<: *hardening
+    image: nginxinc/nginx-unprivileged:1.27-alpine@sha256:65e3e85dbaed8ba248841d9d58a899b6197106c23cb0ff1a132b7bfe0547e4c0
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    networks: [frontend, backend]
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+    deploy:
+      resources:
+        limits: { cpus: "0.25", memory: 64M, pids: 200 }
+
+  # Job de inicialização: cria as tabelas no volume e termina. Não cria usuário padrão.
+  app-init:
+    <<: *hardening
+    build: .
+    image: taskflow:local
+    restart: "no"
+    command: ["flask", "--app", "app:create_app()", "init-db"]
+    environment:
+      TASKFLOW_SECRET_KEY: ${TASKFLOW_SECRET_KEY:?defina TASKFLOW_SECRET_KEY no .env}
+    volumes:
+      - taskflow-data:/app/data
+    network_mode: none
+    deploy:
+      resources:
+        limits: { cpus: "0.25", memory: 128M, pids: 200 }
+
+  app:
+    <<: *hardening
+    image: taskflow:local
+    # Segredos só por variável vinda do .env (não versionado). Nada é embutido na imagem.
+    environment:
+      TASKFLOW_SECRET_KEY: ${TASKFLOW_SECRET_KEY:?defina TASKFLOW_SECRET_KEY no .env}
+      TASKFLOW_HTTPS: ${TASKFLOW_HTTPS:-0}
+      TASKFLOW_DEBUG: "0"
+      TASKFLOW_TRUSTED_PROXIES: "1"
+      TASKFLOW_LOG_FILE: /app/logs/taskflow.log
+    volumes:
+      # "Banco": SQLite em volume nomeado, montado só aqui. Não há porta de banco no host.
+      - taskflow-data:/app/data
+      - taskflow-logs:/app/logs
+    networks: [backend]
+    depends_on:
+      app-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:5000/healthz"]
+      interval: 15s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits: { cpus: "0.50", memory: 256M, pids: 200 }
+
+  loki:
+    <<: *hardening
+    image: grafana/loki:3.4.2@sha256:58a6c186ce78ba04d58bfe2a927eff296ba733a430df09645d56cdc158f3ba08
+    command: ["-config.file=/etc/loki/loki.yml"]
+    volumes:
+      - ./observability/loki/loki.yml:/etc/loki/loki.yml:ro
+      - loki-data:/loki
+    networks: [observability]
+    deploy:
+      resources:
+        limits: { cpus: "0.50", memory: 512M, pids: 200 }
+
+  promtail:
+    <<: *hardening
+    image: grafana/promtail:3.4.2@sha256:c6e9a987ca086cbfef945b8ebd708eb09f98b5e78bfb659e4e5a8b3bd604d11b
+    command: ["-config.file=/etc/promtail/promtail.yml"]
+    # Lê o arquivo de log por volume somente-leitura: sem montar /var/run/docker.sock.
+    volumes:
+      - ./observability/promtail/promtail.yml:/etc/promtail/promtail.yml:ro
+      - taskflow-logs:/var/log/taskflow:ro
+      - promtail-positions:/positions
+    networks: [observability]
+    depends_on: [loki]
+    deploy:
+      resources:
+        limits: { cpus: "0.25", memory: 128M, pids: 200 }
+
+  grafana:
+    <<: *hardening
+    image: grafana/grafana:11.5.2@sha256:8b37a2f028f164ce7b9889e1765b9d6ee23fec80f871d156fbf436d6198d32b7
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?defina GRAFANA_ADMIN_PASSWORD no .env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana-dashboards:ro
+      - grafana-data:/var/lib/grafana
+    networks: [frontend, observability]
+    depends_on: [loki]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/api/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits: { cpus: "0.50", memory: 256M, pids: 200 }
+
+networks:
+  frontend: {}
+  backend:
+    internal: true
+  observability:
+    internal: true
+
+volumes:
+  taskflow-data: {}
+  taskflow-logs: {}
+  loki-data: {}
+  promtail-positions: {}
+  grafana-data: {}

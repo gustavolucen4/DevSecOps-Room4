@@ -2,7 +2,9 @@
 <h1>TaskFlow</h1>
 <form method="post">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-<label>Usuário <input name="username" required autocomplete="username"></label>
+<label>Usuário <input name="username" value="{{ username }}" required autocomplete="username"></label>
 <label>Senha <input type="password" name="password" required autocomplete="current-password"></label>
 <button>Entrar</button>
-</form><p>{{ error or '' }}</p></html>
+</form>
+{# Autoescape do Jinja: a mensagem ecoa o usuário digitado como texto, nunca como HTML. #}
+{% if error %}<p role="alert">{{ error }}</p>{% endif %}</html>

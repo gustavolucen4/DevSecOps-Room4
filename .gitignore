@@ -5,3 +5,8 @@ __pycache__/
 *.db
 .env
 reports/
+infra/.terraform/
+infra/*.tfstate*
+infra/*.tfvars
+!infra/*.tfvars.example
+observability/grafana-data/

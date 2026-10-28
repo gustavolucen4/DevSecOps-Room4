@@ -1,0 +1,31 @@
+# Política do gate DAST. O ZAP roda com -I: alerta WARN aparece no relatório mas não bloqueia;
+# FAIL bloqueia o merge. Toda regra fora do padrão (WARN) tem justificativa na 3ª coluna.
+# Nenhuma regra está como IGNORE: tudo continua visível no relatório publicado como artefato.
+# --- Bloqueantes (FAIL): injeção e falhas que já corrigimos e não podem voltar ---
+40012	FAIL	A03 Injection - Cross Site Scripting (Reflected): sink do erro de login e do q da busca
+40014	FAIL	A03 Injection - Cross Site Scripting (Persistent): título/descrição de tarefa
+40026	FAIL	A03 Injection - Cross Site Scripting (DOM Based)
+40018	FAIL	A03 Injection - SQL Injection: login e busca são parametrizados
+90019	FAIL	A03 Injection - Server Side Include
+10031	WARN	Potential XSS em atributo: q e username voltam no value= do input, porém escapados pelo autoescape. O XSS real é coberto pelas regras 40012/40014 (FAIL).
+10038	FAIL	A05 Security Misconfiguration - Content Security Policy Header Not Set (corrigido via after_request)
+10055	FAIL	A05 Security Misconfiguration - CSP com diretiva insegura (unsafe-inline/wildcard)
+10020	FAIL	A05 Security Misconfiguration - Anti-clickjacking (X-Frame-Options/frame-ancestors)
+10021	FAIL	A05 Security Misconfiguration - X-Content-Type-Options ausente
+10010	FAIL	A05 Security Misconfiguration - Cookie sem HttpOnly
+10054	FAIL	A05 Security Misconfiguration - Cookie sem SameSite
+10202	FAIL	A01 Broken Access Control - Formulário sem token anti-CSRF (Flask-WTF ativo)
+10023	FAIL	A05 Security Misconfiguration - Information Disclosure: Debug Error Messages (/debug/info removido)
+10037	FAIL	A05 Security Misconfiguration - Server Leaks Information via X-Powered-By
+10098	FAIL	A05 Security Misconfiguration - Cross-Domain Misconfiguration (CORS)
+# --- Rebaixadas para WARN, com justificativa ---
+10011	WARN	Cookie sem Secure: o scan roda em HTTP no runner (TASKFLOW_HTTPS=0). Em produção TASKFLOW_HTTPS=1 liga o Secure.
+10035	WARN	HSTS ausente: o runner não tem TLS; HSTS é aplicado no proxy/terminador TLS de produção, não no Gunicorn.
+10036	WARN	Server header: o Gunicorn envia apenas 'gunicorn' sem versão; em produção o proxy reescreve o header.
+10049	WARN	Conteúdo não-armazenável/cacheável: é informativo; já usamos Cache-Control no-store de propósito.
+10109	WARN	Modern Web Application: informativo, não é vulnerabilidade.
+10104	WARN	User Agent Fuzzer: informativo do scan ativo, sem impacto de segurança.
+10111	WARN	Authentication Request Identified: informativo, o ZAP só marca o formulário de login.
+10112	WARN	Session Management Response Identified: informativo, marca o cookie de sessão.
+10106	WARN	HTTP Only Site: o runner não tem TLS; em produção o acesso é só HTTPS (SG libera apenas 443).
+20012	WARN	Anti-CSRF Tokens Check (ativo): o container do DAST sobe com TASKFLOW_CSRF=0 para o XSS ser testado de forma estável. A validação do token é garantida por test_csrf_required_and_debug_removed no CI.
